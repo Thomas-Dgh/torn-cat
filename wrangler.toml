@@ -1,0 +1,29 @@
+# Configuration Cloudflare Workers pour CAT Relay
+name = "cat-relay"
+main = "cat-relay-worker.js"
+compatibility_date = "2024-01-01"
+
+# KV Namespace pour stocker les événements
+[[kv_namespaces]]
+binding = "CAT_RELAY"
+id = "b922d5f567604510a846d832a5a6b8e1"
+preview_id = "e590d5e6e59d4e59933c8e07f7a91f8a"
+
+# Durable Objects pour les connexions WebSocket persistantes
+[[durable_objects.bindings]]
+name = "WEBSOCKET_HANDLER"
+class_name = "WebSocketHandler"
+
+# Migrations pour les Durable Objects
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = [ "WebSocketHandler" ]
+
+# Scheduled event pour maintenir les connexions (toutes les 5 minutes)
+[triggers]
+crons = ["*/5 * * * *"]
+
+# Variables d'environnement
+[vars]
+SUPABASE_URL = "https://wdgvdggkhxeugyusaymo.supabase.co"
+SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndkZ3ZkZ2draHhldWd5dXNheW1vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgzOTk3NDEsImV4cCI6MjA3Mzk3NTc0MX0.OR5W5YVqWvbZLQ4pK6j-DAiK6_GiEKM4gJfl7MBDaT0"

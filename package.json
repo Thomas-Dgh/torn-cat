@@ -12,11 +12,20 @@
     "test": "echo 'No tests yet'",
     "analyze:usage": "node scripts/analyze-usage.js"
   },
-  "keywords": ["torn", "supabase", "edge-functions", "optimization"],
+  "keywords": [
+    "torn",
+    "supabase",
+    "edge-functions",
+    "optimization"
+  ],
   "author": "JESUUS",
   "license": "MIT",
   "devDependencies": {
-    "@supabase/supabase-js": "^2.39.0",
+    "@supabase/supabase-js": "^2.74.0",
     "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^5.1.0"
   }
 }

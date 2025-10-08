@@ -77,20 +77,18 @@
   // Initialize maintenance mode as false, will be checked from Supabase
   window.catMaintenanceMode = false;
   
-  // Track if server supports relay endpoints (call-management, auto-uncall, etc.)
-  let serverSupportsRelayEndpoints = false;
-  
   // Global error handlers to catch silent errors
   window.addEventListener('error', (event) => {
     console.error('🚨 [CAT DEBUG] Global error caught:', event.error, 'at', event.filename, ':', event.lineno);
   });
   
   window.addEventListener('unhandledrejection', (event) => {
-    // console.error('🚨 [CAT DEBUG] Unhandled promise rejection:', event.reason);
+    console.error('🚨 [CAT DEBUG] Unhandled promise rejection:', event.reason);
   });
   
   // Helper function for direct OVH requests (no proxy)
   function makeOVHRequest(url, options = {}) {
+    console.log('🔍 [CAT DEBUG] makeOVHRequest called with URL:', url);
     return new Promise((resolve, reject) => {
       GM_xmlhttpRequest({
         method: options.method || 'GET',
@@ -101,21 +99,24 @@
         onload: function(response) {
           try {
             if (response.status >= 200 && response.status < 300) {
+              console.log('✅ [CAT DEBUG] makeOVHRequest SUCCESS:', url, 'Status:', response.status);
               const data = response.responseText ? JSON.parse(response.responseText) : null;
               resolve(data);
             } else {
-              // console.error('❌ [CAT] HTTP Error:', response.status, response.statusText, 'URL:', response.finalUrl || 'unknown');
-              // reject(new Error(`HTTP ${response.status}: ${response.statusText}`));
+              console.error('❌ [CAT DEBUG] makeOVHRequest ERROR:', url, 'Status:', response.status, response.statusText);
+              reject(new Error(`HTTP ${response.status}: ${response.statusText}`));
             }
           } catch (error) {
-            console.error('❌ [CAT] Parse error. Response was:', response.responseText?.substring(0, 200));
-            reject(new Error(`Parse error: ${error.message}. Response: ${response.responseText?.substring(0, 100)}`));
+            console.error('❌ [CAT DEBUG] makeOVHRequest PARSE ERROR:', url, error);
+            reject(error);
           }
         },
         onerror: function() {
+          console.error('❌ [CAT DEBUG] makeOVHRequest NETWORK ERROR:', url);
           reject(new Error('Network error'));
         },
         ontimeout: function() {
+          console.error('❌ [CAT DEBUG] makeOVHRequest TIMEOUT:', url);
           reject(new Error('Request timeout'));
         }
       });
@@ -124,6 +125,7 @@
 
   // Helper function for Supabase requests
   function makeSupabaseRequest(url, options = {}) {
+    console.log('🔍 [CAT DEBUG] makeSupabaseRequest called with URL:', url);
     return new Promise((resolve, reject) => {
       GM_xmlhttpRequest({
         method: options.method || 'GET',
@@ -132,21 +134,24 @@
         onload: function(response) {
           try {
             if (response.status >= 200 && response.status < 300) {
+              console.log('✅ [CAT DEBUG] makeSupabaseRequest SUCCESS:', url, 'Status:', response.status);
               const data = response.responseText ? JSON.parse(response.responseText) : null;
               resolve(data);
             } else {
-              console.error('❌ [CAT] HTTP Error:', response.status, response.statusText, 'URL:', response.finalUrl || 'unknown');
+              console.error('❌ [CAT DEBUG] makeSupabaseRequest ERROR:', url, 'Status:', response.status, response.statusText);
               reject(new Error(`HTTP ${response.status}: ${response.statusText}`));
             }
           } catch (error) {
-            console.error('❌ [CAT] Parse error. Response was:', response.responseText?.substring(0, 200));
-            reject(new Error(`Parse error: ${error.message}. Response: ${response.responseText?.substring(0, 100)}`));
+            console.error('❌ [CAT DEBUG] makeSupabaseRequest PARSE ERROR:', url, error);
+            reject(error);
           }
         },
         onerror: function() {
+          console.error('❌ [CAT DEBUG] makeSupabaseRequest NETWORK ERROR:', url);
           reject(new Error('Network error'));
         },
         ontimeout: function() {
+          console.error('❌ [CAT DEBUG] makeSupabaseRequest TIMEOUT:', url);
           reject(new Error('Request timeout'));
         }
       });
@@ -155,6 +160,7 @@
 
   // Check maintenance mode from Supabase
   async function checkMaintenanceMode() {
+    console.log('🔍 [CAT DEBUG] checkMaintenanceMode called');
     try {
       const data = await makeSupabaseRequest(`${CONFIG.supabase.url}/rest/v1/war_script_version?select=maintenance_mode&is_active=eq.true&limit=1`, {
         method: 'GET',
@@ -194,10 +200,12 @@
   // Function to extract war ID from current page URL
   function getCurrentWarID() {
     const url = window.location.href;
+    console.log('🔍 [CAT] Getting war ID from URL:', url);
     
     // Try to extract from URL parameters
     const warIdMatch = url.match(/(?:warID=|war=)(\d+)/);
     if (warIdMatch) {
+      console.log('🔍 [CAT] Found war ID in URL:', warIdMatch[1]);
       return warIdMatch[1];
     }
     
@@ -206,6 +214,7 @@
     for (const element of warElements) {
       const warId = element.dataset.warId || element.dataset.warid || element.textContent.match(/\d+/)?.[0];
       if (warId) {
+        console.log('🔍 [CAT] Found war ID in DOM:', warId);
         return warId;
       }
     }
@@ -214,10 +223,12 @@
     try {
       if (window.warID || unsafeWindow.warID) {
         const warId = window.warID || unsafeWindow.warID;
+        console.log('🔍 [CAT] Found war ID in window:', warId);
         return warId;
       }
     } catch (e) {}
     
+    console.log('🔍 [CAT] No war ID found, using rank fallback');
     return 'rank';
   }
 
@@ -290,6 +301,7 @@
       // Try to get from intercepted data first
       const warData = unsafeWindow.CATWarData || {};
       if (warData.opponentFaction && warData.opponentFaction.id) {
+        console.log('🔍 [CAT] Found enemy faction ID from intercepted data:', warData.opponentFaction.id);
         return warData.opponentFaction.id;
       }
       
@@ -297,6 +309,7 @@
       if (window.warCallingSystemInstance && window.warCallingSystemInstance.currentWar) {
         const currentWar = window.warCallingSystemInstance.currentWar;
         if (currentWar.enemy_faction_id) {
+          console.log('🔍 [CAT] Found enemy faction ID from current war:', currentWar.enemy_faction_id);
           return currentWar.enemy_faction_id;
         }
         
@@ -305,15 +318,18 @@
           const myFactionId = parseInt(window.warCallingSystemInstance.factionId);
           const enemyFaction = currentWar.factions.find(f => f.id !== myFactionId);
           if (enemyFaction) {
+            console.log('🔍 [CAT] Found enemy faction ID from factions array:', enemyFaction.id);
             return enemyFaction.id;
           }
         }
       }
       
+      console.log('🔍 [CAT] No enemy faction ID found, using own');
       return 'own';
     } catch (error) {
       console.error("❌ [CAT] Error getting enemy faction ID:", error);
       console.error("❌ [CAT] Enemy faction ID error stack:", error.stack);
+      console.log('🔍 [CAT] Error getting enemy faction ID:', error);
       return 'own';
     }
   }
@@ -324,6 +340,7 @@
     const rfcv = unsafeWindow.rfcv || window.rfcv || Math.random().toString(36).substring(2, 15);
     const url = `https://www.torn.com/faction_wars.php?redirect=false&step=getwarusers&factionID=0&userID=0&warID=rank&rfcv=${rfcv}`;
     
+    console.log('🌍 [CAT] Making Torn-like fetch request to:', url);
     
     try {
       const response = await unsafeWindow.fetch(url, {
@@ -339,10 +356,12 @@
       if (response.ok) {
         try {
           const data = await response.json();
+          console.log('🌍 [CAT] Torn-like fetch response:', data);
           return data;
         } catch (jsonError) {
           console.error('❌ [CAT] JSON Parse Error in Torn-like fetch:', jsonError);
           const text = await response.text();
+          console.log('🔍 [CAT] Response Text:', text.substring(0, 500));
           return null;
         }
       } else {
@@ -367,12 +386,14 @@
     let currentFactionID = factionID || await getEnemyFactionID();
     const currentWarID = warID || getCurrentWarID();
     
+    console.log('🔍 [CAT] Using faction ID:', currentFactionID, 'and war ID:', currentWarID);
     
     return new Promise((resolve, reject) => {
       try {
         const rfcv = unsafeWindow.rfcv || window.rfcv || Math.random().toString(36).substring(2, 15);
         const url = `https://www.torn.com/faction_wars.php?redirect=false&step=getwarusers&factionID=${currentFactionID}&userID=0&warID=${currentWarID}&rfcv=${rfcv}`;
         
+        console.log('🌍 [CAT] Making fetch request in unsafeWindow context to:', url);
 
       
         unsafeWindow.fetch(url, {
@@ -390,10 +411,12 @@
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
           }
         }).then(data => {
+          console.log('🔍 [CAT] Fetch response received:', data);
           
           // Check if warDesc indicates no war
           if (data && data.warDesc && data.warDesc.success === false) {
             console.warn('🔍 [CAT] warDesc indicates no active war:', data.warDesc.message);
+            console.log('🔍 [CAT] Full response structure:', JSON.stringify(data, null, 2));
           }
           
           resolve(data);
@@ -439,55 +462,13 @@
   // ========================================
   // PROXY CONFIGURATION
   // ========================================
-  const PROXY_URL = null; // Force direct requests instead of proxy
+  const PROXY_URL = 'https://cat-script.duckdns.org/api/proxy?url=';
 
   // Helper function to use proxy for external requests
   function makeProxiedRequest(url, options = {}) {
-    // If PROXY_URL is null, make direct request
-    if (!PROXY_URL) {
-      return new Promise((resolve, reject) => {
-        let headers = { ...options.headers };
-        
-        // Add Supabase auth headers if needed
-        if (url.includes('supabase.co')) {
-          headers['apikey'] = CONFIG.supabase.anonKey;
-          headers['Authorization'] = `Bearer ${CONFIG.supabase.anonKey}`;
-          headers['Content-Type'] = 'application/json';
-        }
-        
-        GM_xmlhttpRequest({
-          ...options,
-          url: url, // Direct URL
-          method: options.method || 'GET',
-          headers: headers,
-          timeout: 30000,
-          onload: (response) => {
-            if (response.status >= 200 && response.status < 300) {
-              resolve({
-                ok: true,
-                status: response.status,
-                text: () => Promise.resolve(response.responseText),
-                json: () => Promise.resolve(JSON.parse(response.responseText))
-              });
-            } else {
-              console.error(`❌ [CAT] HTTP Error: ${response.status}  URL: ${url}`);
-              reject(new Error(`HTTP ${response.status}: ${response.statusText || ''}`));
-            }
-          },
-          onerror: (error) => {
-            console.error(`❌ [CAT] Request Error:`, error, `URL: ${url}`);
-            reject(error);
-          },
-          ontimeout: () => {
-            console.error(`❌ [CAT] Request Timeout  URL: ${url}`);
-            reject(new Error('Request timeout'));
-          }
-        });
-      });
-    }
-    
-    // Original proxy logic
+    console.log('🔍 [CAT DEBUG] makeProxiedRequest called with URL:', url);
     const proxiedUrl = PROXY_URL + encodeURIComponent(url);
+    console.log('🔗 [CAT] Using VPS proxy:', proxiedUrl);
     return new Promise((resolve, reject) => {
       // Préparer les en-têtes pour le proxy
       let proxyHeaders = { ...options.headers };
@@ -508,6 +489,7 @@
         onload: function(response) {
           try {
             if (response.status >= 200 && response.status < 300) {
+              console.log('✅ [CAT DEBUG] makeProxiedRequest SUCCESS:', proxiedUrl, 'Status:', response.status);
               let data = null;
               if (response.responseText) {
                 try {
@@ -519,18 +501,20 @@
               }
               resolve(data);
             } else {
-              console.error('❌ [CAT] HTTP Error:', response.status, response.statusText, 'URL:', response.finalUrl || 'unknown');
+              console.error('❌ [CAT DEBUG] makeProxiedRequest ERROR:', proxiedUrl, 'Status:', response.status, response.statusText);
               reject(new Error(`HTTP ${response.status}: ${response.statusText}`));
             }
           } catch (error) {
-            console.error('❌ [CAT] Parse error. Response was:', response.responseText?.substring(0, 200));
-            reject(new Error(`Parse error: ${error.message}. Response: ${response.responseText?.substring(0, 100)}`));
+            console.error('❌ [CAT DEBUG] makeProxiedRequest PARSE ERROR:', proxiedUrl, error);
+            reject(error);
           }
         },
         onerror: function(error) {
+          console.error('❌ [CAT DEBUG] makeProxiedRequest NETWORK ERROR:', proxiedUrl);
           reject(new Error('Network error'));
         },
         ontimeout: function() {
+          console.error('❌ [CAT DEBUG] makeProxiedRequest TIMEOUT:', proxiedUrl);
           reject(new Error('Request timeout'));
         }
       });
@@ -565,11 +549,9 @@
         // Démarre le polling des événements
         this.startPolling();
 
-        // Only set to OPEN and call onopen if we actually have a real connection
-        // Test the connection first
-        await this.testConnection();
         this.readyState = 1; // OPEN
-        
+
+        // Simule l'événement onopen du WebSocket
         if (this.onopen) {
           this.onopen();
         }
@@ -581,40 +563,6 @@
           this.onerror(error);
         }
       }
-    }
-
-    // Test if the server is actually a relay server with proper endpoints
-    async testConnection() {
-      return new Promise((resolve, reject) => {
-        GM_xmlhttpRequest({
-          method: 'GET',
-          url: `${this.relayUrl}/ping`,
-          timeout: 5000,
-          onload: (response) => {
-            if (response.status === 200) {
-              try {
-                // Check if response is JSON (real relay server) or text (generic server)
-                const data = JSON.parse(response.responseText);
-                if (data.deployed || data.status) {
-                  serverSupportsRelayEndpoints = true;
-                  resolve(true);
-                } else {
-                  reject(new Error('Server ping response invalid'));
-                }
-              } catch (e) {
-                // Not JSON response, probably generic server
-                console.warn('⚠️ [CAT Relay] Server does not support relay endpoints');
-                reject(new Error('Server is not a CAT Relay server'));
-              }
-            } else {
-              reject(new Error(`Server responded with status ${response.status}`));
-            }
-          },
-          onerror: (error) => {
-            reject(new Error('Connection test failed'));
-          }
-        });
-      });
     }
 
     // S'abonne aux événements de la faction
@@ -765,7 +713,7 @@
   function createCATRelayConnection(wsUrl) {
     // Si le relay n'est pas disponible, utilise la méthode de fallback
     if (!isRelayAvailable) {
-      return null;
+      return createProxiedWebSocket(wsUrl);
     }
 
     // Parse les paramètres de l'URL WebSocket originale
@@ -773,7 +721,8 @@
     const apiKey = urlObj.searchParams.get('apikey');
 
     // URL du relay server
-    const relayUrl = 'http://51.178.26.139:8444';
+    const relayUrl = 'https://cat-script.duckdns.org/api/relay';
+    console.log('📡 [CAT] Using VPS relay:', relayUrl);
 
     // Récupère l'ID de faction
     const factionId = window.warCallingSystemInstance?.factionId;
@@ -790,6 +739,115 @@
   const ProxyOriginalWebSocket = unsafeWindow.WebSocket;
 
   // HTTP polling WebSocket simulation (realtime-like via Server-Sent Events)
+  function ProxiedWebSocket(url) {
+    this.url = url;
+    this.readyState = ProxiedWebSocket.CONNECTING;
+    this.onopen = null;
+    this.onmessage = null;
+    this.onclose = null;
+    this.onerror = null;
+
+    // Extract API key for HTTP requests
+    const urlObj = new URL(url);
+    this.apiKey = urlObj.searchParams.get('apikey');
+
+    // Start connection simulation
+    setTimeout(() => {
+      this.readyState = ProxiedWebSocket.OPEN;
+      if (this.onopen) {
+        this.onopen();
+      }
+
+      // Start polling for realtime updates
+      this.startRealtimePolling();
+    }, 100);
+  }
+
+  ProxiedWebSocket.prototype.startRealtimePolling = function() {
+    // Use Server-Sent Events for real-time updates (bypass CSP)
+    const sseUrl = `${PROXY_URL}${encodeURIComponent(`http://cat-script.duckdns.org:8443/realtime_stream?apikey=${this.apiKey}`)}`;
+
+    try {
+      this.eventSource = new EventSource(sseUrl);
+
+      this.eventSource.onmessage = (event) => {
+        if (this.onmessage) {
+          this.onmessage({
+            data: event.data
+          });
+        }
+      };
+
+      this.eventSource.onerror = () => {
+        this.fallbackToPolling();
+      };
+
+    } catch (error) {
+      this.fallbackToPolling();
+    }
+  };
+
+  ProxiedWebSocket.prototype.fallbackToPolling = function() {
+    // Fallback to reduced polling if SSE fails
+    this.pollInterval = setInterval(() => {
+      this.checkForUpdates();
+    }, 5000); // 5 seconds instead of 500ms
+  };
+
+  ProxiedWebSocket.prototype.checkForUpdates = function() {
+    // Check for new data and simulate WebSocket messages
+    if (this.onmessage && window.warCallingSystemInstance) {
+      // Simulate realtime updates from existing data
+      const fakeMessage = {
+        data: JSON.stringify({
+          event: 'UPDATE',
+          payload: {
+            eventType: 'sync',
+            timestamp: Date.now()
+          }
+        })
+      };
+
+      // Trigger periodic UI updates
+      if (Math.random() < 0.1) { // 10% chance per poll
+        this.onmessage(fakeMessage);
+      }
+    }
+  };
+
+  ProxiedWebSocket.prototype.send = function(data) {
+    // Send via HTTP instead of WebSocket
+    // This would be where you'd send subscription requests via makeProxiedRequest
+  };
+
+  ProxiedWebSocket.prototype.close = function() {
+    this.readyState = ProxiedWebSocket.CLOSED;
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+    }
+    if (this.onclose) this.onclose();
+  };
+
+  ProxiedWebSocket.prototype.addEventListener = function(type, listener) {
+    if (type === 'message') this.onmessage = listener;
+    else if (type === 'open') this.onopen = listener;
+    else if (type === 'close') this.onclose = listener;
+    else if (type === 'error') this.onerror = listener;
+  };
+
+  ProxiedWebSocket.prototype.removeEventListener = function() {};
+  ProxiedWebSocket.prototype.dispatchEvent = function() {};
+
+  // Static constants
+  ProxiedWebSocket.CONNECTING = 0;
+  ProxiedWebSocket.OPEN = 1;
+  ProxiedWebSocket.CLOSING = 2;
+  ProxiedWebSocket.CLOSED = 3;
+
+  // Helper function to create proxied WebSocket
+  function createProxiedWebSocket(wsUrl) {
+    return new ProxiedWebSocket(wsUrl);
+  }
 
   // ========================================
   // HOSPITAL DATA INTERCEPTORS
@@ -819,6 +877,13 @@
          url.includes('loader.php?sid=getInformation'))) {
 
       // Log the exact request details
+      console.log('🌐 [CAT INTERCEPT] War fetch detected:', {
+        url: url,
+        method: options.method || 'GET',
+        headers: options.headers,
+        body: options.body,
+        credentials: options.credentials
+      });
       
       // Store this request for later replay if it contains getwarusers
       if (url.includes('step=getwarusers')) {
@@ -829,6 +894,7 @@
           body: options.body,
           credentials: options.credentials || 'include'
         };
+        console.log('🌐 [CAT INTERCEPT] Stored war request for replay:', unsafeWindow.lastWarRequest);
       }
 
 
@@ -839,13 +905,24 @@
         if (json.warDesc && json.warDesc.members) {
           
           // 🎯 LOG THE COMPLETE warDesc DATA FOR ANALYSIS
+          console.log('🎯 [CAT FETCH]', {
+            url: url,
+            hasWarDesc: !!json.warDesc,
+            allKeys: json.warDesc ? Object.keys(json.warDesc) : [],
+            hasMembers: !!json.warDesc?.members,
+            membersCount: json.warDesc?.members?.length || 0,
+            currentFaction: json.warDesc?.currentFaction?.name,
+            opponentFaction: json.warDesc?.opponentFaction?.name
+          });
 
           // Only update war metadata if we have valid data with members
           if (json.warDesc.members.length > 0) {
+            console.log('🎯 [CAT] Updating war data with', json.warDesc.members.length, 'members');
             warData.currentFaction = json.warDesc.currentFaction;
             warData.opponentFaction = json.warDesc.opponentFaction;
             warData.graph = json.warDesc.graph;
           } else {
+            console.log('🎯 [CAT] Skipping empty war data update');
           }
 
 
@@ -880,6 +957,12 @@
             });
 
             // Notify that new war data is available
+            console.log('🎯 [CAT STORED] War data stored globally:', {
+              warDataKeys: Object.keys(warData),
+              userDataCount: Object.keys(userData).length,
+              currentFactionName: warData.currentFaction?.name,
+              opponentFactionName: warData.opponentFaction?.name
+            });
             window.dispatchEvent(new CustomEvent('warDataUpdated', { detail: { userData, warData } }));
           }
         }
@@ -910,7 +993,9 @@
         }
       }).catch((error) => {
         console.error('❌ [CAT INTERCEPT] JSON Parse Error in intercepted response:', error);
+        console.log('🔍 [CAT INTERCEPT] Response URL:', response.url);
         response.text().then(text => {
+          console.log('🔍 [CAT INTERCEPT] Response Text:', text.substring(0, 500));
         }).catch(() => {});
       });
     }
@@ -1175,11 +1260,11 @@
           if (match) return match[1].trim();
         }
       }
-      return "5.1.4"; // Default fallback
+      return "4.5.0"; // Default fallback
     } catch (error) {
       console.error("❌ [CAT] Error getting script version:", error);
       console.error("❌ [CAT] Script version error stack:", error.stack);
-      return "5.1.4";
+      return "4.5.0";
     }
   };
 
@@ -1194,7 +1279,7 @@
       realtimeUrl: "wss://wdgvdggkhxeugyusaymo.supabase.co/realtime/v1/websocket", // Supabase realtime WebSocket URL
     },
     ovh: {
-      url: "http://51.178.26.139:8444", // Direct IP to relay container
+      url: "http://cat-script.duckdns.org:8443", // OVH server URL for custom endpoints
     },
     syncInterval: 500, // 0.5 seconds for enemy faction updates (faster WebSocket sync)
     warCheckInterval: 30000, // 30 seconds (increased for mobile stability)
@@ -1273,7 +1358,7 @@
       return Promise.resolve(null);
     }
 
-    const url = `${GetBSPServer()}/battlestats/${primaryAPIKey}/${targetId}/5.1.4`;
+    const url = `${GetBSPServer()}/battlestats/${primaryAPIKey}/${targetId}/4.5.0`;
 
     return new Promise((resolve, reject) => {
       makeProxiedRequest(url, {
@@ -1449,6 +1534,7 @@
   };
 
   const customFetch = async (url, options = {}) => {
+    console.log('🔍 [CAT DEBUG] customFetch called with URL:', url);
     if (isTornPDA()) {
       return pdaFetch(url, options);
     }
@@ -1485,13 +1571,15 @@
         'tornstats.com',
         'www.lol-manager.com',
         'workers.dev',
-        'cat-script.duckdns.org',
-        '51.178.26.139'
+        'cat-script.duckdns.org'
       ];
 
       const shouldUseProxy = !allowedDomains.some(domain => url.includes(domain));
+      console.log('🔍 [CAT DEBUG] customFetch shouldUseProxy:', shouldUseProxy, 'for URL:', url);
 
       if (shouldUseProxy) {
+        // Use proxy for external domains
+        console.log('🔍 [CAT DEBUG] customFetch using PROXY for:', url);
         makeProxiedRequest(url, {
           method: options.method || "GET",
           headers: {
@@ -1523,6 +1611,9 @@
                 try {
                   return Promise.resolve(JSON.parse(response.responseText));
                 } catch (jsonError) {
+                  console.error('❌ [CAT DEBUG] JSON Parse Error for URL:', url);
+                  console.error('❌ [CAT DEBUG] Response Text:', response.responseText.substring(0, 500));
+                  console.error('❌ [CAT DEBUG] JSON Error:', jsonError);
                   return Promise.reject(new Error(`JSON Parse Error: ${jsonError.message}`));
                 }
               },
@@ -1571,6 +1662,8 @@
         },
         });
       } else {
+        // Use direct GM_xmlhttpRequest for allowed domains
+        console.log('🔍 [CAT DEBUG] customFetch using DIRECT request for:', url);
         GM_xmlhttpRequest({
           method: options.method || "GET",
           url: url,
@@ -1584,6 +1677,12 @@
           timeout: 30000,
           responseType: "text",
           onload: (response) => {
+            if (response.status >= 200 && response.status < 300) {
+              console.log('✅ [CAT DEBUG] customFetch DIRECT SUCCESS:', url, 'Status:', response.status);
+            } else {
+              console.error('❌ [CAT DEBUG] customFetch DIRECT ERROR:', url, 'Status:', response.status, response.statusText);
+            }
+            
             // Reset circuit breaker on successful request for Supabase URLs
             if (url.includes("supabase.co") && window.warCallingSystemInstance) {
               const instance = window.warCallingSystemInstance;
@@ -1603,6 +1702,9 @@
                 try {
                   return Promise.resolve(JSON.parse(response.responseText));
                 } catch (jsonError) {
+                  console.error('❌ [CAT DEBUG] JSON Parse Error for URL:', url);
+                  console.error('❌ [CAT DEBUG] Response Text:', response.responseText.substring(0, 500));
+                  console.error('❌ [CAT DEBUG] JSON Error:', jsonError);
                   return Promise.reject(new Error(`JSON Parse Error: ${jsonError.message}`));
                 }
               },
@@ -1767,73 +1869,88 @@
     }
 
     async connect() {
-      if (this.ws && (
-        (this.ws instanceof EventSource && this.ws.readyState === EventSource.OPEN) ||
-        (this.ws instanceof WebSocket && this.ws.readyState === WebSocket.OPEN)
-      )) {
+      if (this.ws && this.ws.readyState === 1) { // OPEN
         return;
       }
 
       try {
-        // Check if relay server is available and use GM_xmlhttpRequest for Server-Sent Events (CSP-safe)
-        if (await this.testRelayServer()) {
-          
-          // Create fake WebSocket for compatibility
-          this.ws = {
-            readyState: 1, // OPEN
-            onopen: null,
-            onmessage: null,
-            onerror: null,
-            onclose: null,
-            close: () => {
-              this.stopRealtimeSSE();
-            },
-            send: () => {} // No-op
-          };
-          
+        // Utilise le CAT Relay au lieu du WebSocket direct
+        const wsUrl = CONFIG.supabase.realtimeUrl + "?apikey=" + CONFIG.supabase.anonKey + "&vsn=1.0.0";
+        this.ws = createCATRelayConnection(wsUrl);
+
+        if (!this.ws) {
+          console.error("[Realtime] Failed to create relay connection");
+          return;
+        }
+
+        // Démarre la connexion relay de façon asynchrone
+        let isUsingRelay = true;
+        try {
+          await this.ws.connect();
+        } catch (relayError) {
+          console.warn("⚠️ [Realtime] CAT Relay failed, falling back to direct connection:", relayError.message);
+
+          // Fallback vers la méthode directe si le relay échoue
+          if (!isRelayAvailable) {
+            this.ws = createProxiedWebSocket(wsUrl);
+            isUsingRelay = false;
+            if (!this.ws) {
+              throw new Error("Both relay and direct connection failed");
+            }
+          } else {
+            throw relayError;
+          }
+        }
+
+        // Configure les event handlers
+        this.ws.onopen = () => {
+          const connectionType = isUsingRelay ? "CAT Relay" : "Direct WebSocket";
           this.isConnected = true;
           this.reconnectAttempts = 0;
-          
-          // Start Server-Sent Events stream
-          this.startRealtimeSSE();
-          
+          this.startHeartbeat();
+          this.joinChannels();
+
           // Update UI indicator immediately
           if (this.warSystem.updateCompactInfo) {
             this.warSystem.updateCompactInfo();
           }
-          
-          return;
-        }
+        };
 
-        // No fallback - realtime only works with relay server
-        console.warn("⚠️ [Realtime] Relay not available, realtime disabled");
-        return;
+        this.ws.onmessage = (event) => {
+          this.handleMessage(JSON.parse(event.data));
+        };
+
+        this.ws.onclose = () => {
+          this.isConnected = false;
+          this.stopHeartbeat();
+          this.attemptReconnect();
+
+          // Update UI indicator immediately
+          if (this.warSystem.updateCompactInfo) {
+            this.warSystem.updateCompactInfo();
+          }
+        };
+
+        this.ws.onerror = (error) => {
+          console.error("[Realtime] WebSocket error:", error);
+        };
 
       } catch (error) {
         console.error("[Realtime] Failed to connect:", error);
+        this.attemptReconnect();
       }
     }
 
     disconnect() {
       this.isConnected = false;
       this.stopHeartbeat();
-      this.stopRealtimeSSE();
       if (this.ws) {
-        if (this.ws instanceof EventSource) {
-          this.ws.close();
-        } else {
-          this.ws.close();
-        }
+        this.ws.close();
         this.ws = null;
       }
     }
 
     startHeartbeat() {
-      // EventSource doesn't need heartbeat, it's automatic
-      if (this.ws instanceof EventSource) {
-        return;
-      }
-      
       this.heartbeatInterval = setInterval(() => {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
           this.ws.send(JSON.stringify({
@@ -1990,89 +2107,6 @@
         );
       }
     }
-
-    startRealtimeSSE() {
-      if (this.sseRequest) return; // Already running
-      
-      
-      this.sseRequest = GM_xmlhttpRequest({
-        method: 'GET',
-        url: 'http://51.178.26.139:8443/realtime_stream',
-        timeout: 0, // No timeout for SSE
-        responseType: 'stream',
-        onloadstart: () => {
-        },
-        onprogress: (response) => {
-          // Parse SSE data
-          const lines = response.responseText.split('\n');
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(line.substring(6));
-                
-                if (data.type === 'connected') {
-                  this.isConnected = true;
-                  if (this.warSystem.updateCompactInfo) {
-                    this.warSystem.updateCompactInfo();
-                  }
-                }
-              } catch (e) {
-                console.warn('📡 [SSE] Invalid data:', line);
-              }
-            }
-          }
-        },
-        onerror: (error) => {
-          console.error('📡 [SSE] Error:', error);
-          this.isConnected = false;
-          this.sseRequest = null;
-          setTimeout(() => this.startRealtimeSSE(), 5000); // Retry in 5s
-        },
-        onload: (response) => {
-          this.sseRequest = null;
-          setTimeout(() => this.startRealtimeSSE(), 1000); // Reconnect
-        }
-      });
-    }
-
-    stopRealtimeSSE() {
-      if (this.sseRequest) {
-        this.sseRequest.abort();
-        this.sseRequest = null;
-      }
-    }
-
-    async testRelayServer() {
-      return new Promise((resolve) => {
-        GM_xmlhttpRequest({
-          method: 'GET',
-          url: 'http://51.178.26.139:8444/ping',
-          timeout: 3000,
-          onload: (response) => {
-            if (response.status === 200) {
-              try {
-                const data = JSON.parse(response.responseText);
-                if (data.deployed || data.status) {
-                  resolve(true);
-                } else {
-                  resolve(false);
-                }
-              } catch (e) {
-                resolve(false);
-              }
-            } else {
-              resolve(false);
-            }
-          },
-          onerror: () => {
-            resolve(false);
-          },
-          ontimeout: () => {
-            resolve(false);
-          }
-        });
-      });
-    }
   }
 
   class WarCallingSystem {
@@ -2101,8 +2135,8 @@
       this.scriptUsers = new Set();
       this.activeScriptUsers = new Set();
 
-      // Simplified request tracking
-      this.pendingRequests = new Set(); // targetId
+      // Call/uncall request cache to prevent duplicate requests
+      this.pendingCallRequests = new Map(); // targetId -> Promise
       this.lastCallTime = new Map(); // targetId -> timestamp
 
       // DOM element cache for faster UI updates
@@ -3602,7 +3636,7 @@
     async preloadWarTargets(warId) {
       try {
         const response = await customFetch(
-          `http://cat-script.duckdns.org:8080/get-targets`,
+          `${CONFIG.supabase.url}/functions/v1/get-war-targets`,
           {
             method: "POST",
             headers: {
@@ -3611,9 +3645,8 @@
               Authorization: `Bearer ${CONFIG.supabase.anonKey}`,
             },
             body: JSON.stringify({
-                war_id: warId,
-                faction_id: this.factionId,
-                api_key: this.apiKey,
+              war_id: warId,
+              api_key: this.apiKey,
             }),
           }
         );
@@ -3837,7 +3870,6 @@
     // API KEY MANAGEMENT
     // ========================================
     showApiKeyModal() {
-      
       // Track this modal request persistently
       this.persistentModalRequests.add('apiKey');
 
@@ -4052,13 +4084,18 @@
     // WAR MONITORING
     // ========================================
     async checkWarStatus() {
+      const checkId = Math.random().toString(36).substr(2, 9);
+      console.log(`❌ [CAT DEBUG] checkWarStatus [${checkId}] called - starting war status check`);
+      
       // Check if update is available first
       if (this.updateNeeded === true) {
+        console.log('❌ [CAT DEBUG] checkWarStatus - update needed, showing update UI');
         this.updateStatusToUpdateRequired();
         return;
       }
       
       // Re-check maintenance mode before proceeding
+      console.log('❌ [CAT DEBUG] checkWarStatus - checking maintenance mode');
       try {
         const data = await makeSupabaseRequest(`${CONFIG.supabase.url}/rest/v1/war_script_version?select=maintenance_mode&is_active=eq.true&limit=1`, {
           method: 'GET',
@@ -4077,6 +4114,7 @@
 
       // Skip war checking in maintenance mode
       if (window.catMaintenanceMode) {
+        console.log('❌ [CAT DEBUG] checkWarStatus - maintenance mode detected, showing maintenance UI');
         const statusElement = document.getElementById("war-status");
         const compactWarStatus = document.getElementById("compact-war-status");
         
@@ -4167,28 +4205,35 @@
 
       // Prevent concurrent war checks to avoid loops on TornPDA
       if (this.isCheckingWarStatus) {
+        console.log('❌ [CAT DEBUG] checkWarStatus - already checking, skipping');
         return;
       }
 
       this.isCheckingWarStatus = true;
+      console.log('❌ [CAT DEBUG] checkWarStatus - starting main war check logic');
 
       try {
         if (!this.apiKey) {
+          console.log('❌ [CAT DEBUG] checkWarStatus - no API key available');
           return;
         }
 
         // Load cached war status first for instant UI
+        console.log('❌ [CAT DEBUG] checkWarStatus - loading cached war status');
         const cachedWarStatus = this.loadCachedWarStatus();
         if (cachedWarStatus) {
+          console.log('❌ [CAT DEBUG] checkWarStatus - cached war status found:', cachedWarStatus);
           this.currentWar = cachedWarStatus.war;
           this.updateWarUI(cachedWarStatus.war_details, null, true); // true = from cache
 
           // Even if cache shows no war, continue to update the UI with xanax info
           // Don't return early anymore
         } else {
+          console.log('❌ [CAT DEBUG] checkWarStatus - no cached war status found');
         }
 
         // Get user info from Torn API (if missing userId or userName)
+        console.log('❌ [CAT DEBUG] checkWarStatus - checking user info requirements');
         if (
         (!this.userId ||
           !this.userName ||
@@ -4196,6 +4241,7 @@
           !this.factionId) &&
         this.apiKey
       ) {
+          console.log('❌ [CAT DEBUG] checkWarStatus - fetching user info from Torn API');
           try {
             const userUrl = `https://api.torn.com/v2/user?selections=profile&key=${this.apiKey}`;
 
@@ -4249,9 +4295,11 @@
             });
           }
         } else {
+          console.log('❌ [CAT DEBUG] checkWarStatus - user info already available, skipping API call');
         }
 
         // No more hardcoded faction ID fallback - let detection work dynamically
+        console.log('❌ [CAT DEBUG] checkWarStatus - proceeding to war data fetching');
 
         // Fallback for username if still null
         if (!this.userName && this.userId === 2353554) {
@@ -4267,9 +4315,11 @@
           return;
         }
 
+        console.log('❌ [CAT DEBUG] checkWarStatus - making Torn API war request');
         try {
           // Call Torn API directly instead of edge function
           const warApiUrl = `https://api.torn.com/v2/faction/${this.factionId}/wars?key=${this.apiKey}`;
+          console.log('❌ [CAT DEBUG] checkWarStatus - war API URL:', warApiUrl);
 
           const response = await customFetch(warApiUrl);
 
@@ -4288,11 +4338,14 @@
             throw new Error(`Torn API war detection failed: ${response.status}`);
           }
 
+          console.log('❌ [CAT DEBUG] checkWarStatus - war API response OK, parsing JSON');
 
           const data = await response.json();
+          console.log('❌ [CAT DEBUG] checkWarStatus - war data parsed successfully:', data);
 
           // Check for active ranked war
           const hasActiveWar = data.wars.ranked !== null;
+          console.log('❌ [CAT DEBUG] checkWarStatus - has active war:', hasActiveWar);
 
           if (hasActiveWar) {
             const war = data.wars.ranked;
@@ -4654,31 +4707,21 @@
       // }, CONFIG.syncInterval);
 
       // UNIFIED: Use single API call for enemy data - less frequent when realtime is connected
-      // Delay initial sync to let UI stabilize
-      setTimeout(() => {
-        this.activeSyncTimer = setInterval(() => {
-          if (!this.isSyncingCalls && this.currentWar && this.factionId && this.apiKey) {
-            const isRealtimeConnected = this.realtimeManager?.isConnected;
+      this.activeSyncTimer = setInterval(() => {
+        if (!this.isSyncingCalls && this.currentWar && this.factionId && this.apiKey) {
+          const isRealtimeConnected = this.realtimeManager?.isConnected;
 
-            // If realtimeOnly mode is enabled and WebSocket is connected, skip all polling
-            if (CONFIG.realtimeOnly && isRealtimeConnected) {
-              return;
-            }
-
-            // Use longer interval when realtime is connected since call updates come via WebSocket
-            if (!isRealtimeConnected || Math.random() < 0.1) { // 10% chance even when realtime is connected for backup
-              this.syncUnifiedWarData();
-            }
+          // If realtimeOnly mode is enabled and WebSocket is connected, skip all polling
+          if (CONFIG.realtimeOnly && isRealtimeConnected) {
+            return;
           }
-        }, CONFIG.syncInterval);
-      }, 5000); // Wait 5 seconds before starting sync
-      
-      // Do one initial sync after UI is ready
-      setTimeout(() => {
-        if (this.currentWar && this.factionId) {
-          this.syncActiveCalls();
+
+          // Use longer interval when realtime is connected since call updates come via WebSocket
+          if (!isRealtimeConnected || Math.random() < 0.1) { // 10% chance even when realtime is connected for backup
+            this.syncUnifiedWarData();
+          }
         }
-      }, 2000);
+      }, CONFIG.syncInterval);
 
       // Own faction data every 5 seconds
       this.ownFactionSyncTimer = setInterval(() => {
@@ -4737,8 +4780,8 @@
           success: true
         };
 
-        // Get active calls separately (if API key available and server supports it)
-        if (this.apiKey && this.apiKey.trim() !== "" && serverSupportsRelayEndpoints) {
+        // Get active calls separately (if API key available)
+        if (this.apiKey && this.apiKey.trim() !== "") {
           try {
             const callsResponse = await customFetch(`${CONFIG.ovh.url}/call-management`, {
               method: "POST",
@@ -4987,45 +5030,6 @@
         }
       }, 1000); // 1 second for real-time updates
 
-      // Target status refresh timer (every 1 second for status dots)
-      this.targetStatusTimer = setInterval(async () => {
-        if (this.currentWar && this.factionId) {
-          try {
-            await this.refreshTargetStatuses();
-          } catch (error) {
-            console.error('❌ [CAT] Error in target status timer:', error);
-          }
-        }
-      }, CONFIG.targetStatusRefreshInterval); // 1 second for real-time status updates
-
-      // Auto-uncall check timer (every 5 seconds for responsive highlighting)
-      this.autoUncallTimer = setInterval(async () => {
-        if (this.currentWar && this.factionId) {
-          try {
-            // Only check server auto-uncall, not the full refresh
-            const serverAutoUncalled = await this.checkServerAutoUncalledTargets();
-            if (serverAutoUncalled.length > 0) {
-              serverAutoUncalled.forEach((targetId) => {
-                this.highlightTargetForImmediateAttack(targetId);
-              });
-              
-              // Clear the server cache after highlighting
-              try {
-                await makeOVHRequest(`${CONFIG.ovh.url}/auto-uncalled-targets/clear`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ faction_id: this.factionId })
-                });
-              } catch (error) {
-                console.error('❌ [CAT] Error clearing server auto-uncall cache:', error);
-              }
-            }
-          } catch (error) {
-            console.error('❌ [CAT] Error in auto-uncall timer:', error);
-          }
-        }
-      }, 5000); // 5 seconds for responsive highlighting
-
       // Separate timer for hospital timers (every 1 second)
       this.startHospitalTimer();
     }
@@ -5131,12 +5135,6 @@
         );
 
 
-        // Skip sync if server doesn't support relay endpoints
-        if (!serverSupportsRelayEndpoints) {
-          this.isSyncingCalls = false;
-          return;
-        }
-
         const startTime = Date.now();
         const callsResponse = await Promise.race([
           customFetch(`${CONFIG.ovh.url}/call-management`, {
@@ -5172,45 +5170,24 @@
             });
           }
 
-          // Store old state for comparison
-          const oldActiveCalls = new Map(this.activeCalls);
-          
-          // Update internal state
+          // Smart merge: only update if backend has more recent data
+          // For now, trust backend as source of truth but preserve recent local changes
           this.activeCalls = backendCalls;
 
-          // Only update UI if this is the first sync or if we have a clean table
-          const isInitialSync = oldActiveCalls.size === 0;
-          
-          if (isInitialSync) {
-            // Initial load - apply all states without animation
-            this.activeCalls.forEach((callData, targetId) => {
-              this.updateCallUI(targetId, true, callData);
-            });
-            
-            // Set uncalled state for remaining targets
-            this.currentTargets.forEach((target, targetId) => {
-              if (!this.activeCalls.has(targetId)) {
-                this.updateCallUI(targetId, false);
-              }
-            });
-          } else {
-            // Only update changed targets for subsequent syncs
-            const oldCallsSet = new Set(oldActiveCalls.keys());
-            const newCallsSet = new Set(backendCalls.keys());
-            
-            this.currentTargets.forEach((target, targetId) => {
-              const wasActive = oldCallsSet.has(targetId);
-              const isActive = newCallsSet.has(targetId);
-              
-              if (wasActive !== isActive) {
-                if (isActive) {
-                  this.updateCallUI(targetId, true, backendCalls.get(targetId));
-                } else {
-                  this.updateCallUI(targetId, false);
-                }
-              }
-            });
-          }
+
+          // Update UI for all targets: active calls and uncalled targets
+          // First, reset all targets to uncalled state
+          this.currentTargets.forEach((target, targetId) => {
+            if (!this.activeCalls.has(targetId)) {
+              this.updateCallUI(targetId, false);
+            } else {
+            }
+          });
+
+          // Then update UI for all active calls
+          this.activeCalls.forEach((callData, targetId) => {
+            this.updateCallUI(targetId, true, callData);
+          });
 
           // Update compact info bar
           this.updateCompactInfo();
@@ -5277,8 +5254,6 @@
             this.highlightTargetForImmediateAttack(targetId);
           });
         }
-
-        // Server auto-uncall highlighting is handled by dedicated timer (every 5s)
       } catch (error) {
         console.error("❌ [CAT] Error refreshing target statuses:", error);
         console.error("❌ [CAT] Target refresh error stack:", error.stack);
@@ -5294,7 +5269,7 @@
 
       try {
         const response = await customFetch(
-          `http://cat-script.duckdns.org:8080/get-targets`,
+          `${CONFIG.supabase.url}/functions/v1/get-war-targets`,
           {
             method: "POST",
             headers: {
@@ -5303,11 +5278,11 @@
               Authorization: `Bearer ${CONFIG.supabase.anonKey}`,
             },
             body: JSON.stringify({
-                war_id: this.currentWar.war_id,
-                faction_id: this.factionId,
-                api_key: apiKey,
-                force_refresh: true,
-                called_targets_only: Array.from(this.activeCalls.keys()),
+              war_id: this.currentWar.war_id,
+              faction_id: this.factionId,
+              api_key: apiKey,
+              force_refresh: true,
+              called_targets_only: Array.from(this.activeCalls.keys()),
             }),
           }
         );
@@ -5368,7 +5343,7 @@
 
         // Call the new auto-uncall function via faction-api
         const response = await customFetch(
-          `http://cat-script.duckdns.org:8080/get-targets`,
+          `${CONFIG.supabase.url}/functions/v1/faction-api`,
           {
             method: "POST",
             headers: {
@@ -5408,11 +5383,6 @@
       return { uncalledTargets: [], autoUncalledOkayTargets: [] };
     }
 
-    async checkServerAutoUncalledTargets() {
-      // Server auto-uncall disabled - endpoint not available on DuckDNS server
-      return [];
-    }
-
     highlightTargetForImmediateAttack(targetId) {
       // Mark target as priority for sorting
       if (!this.priorityTargets) {
@@ -5436,7 +5406,7 @@
           statusCell.style.color = "#fff";
         }
 
-        // Auto-remove highlight after 10 seconds
+        // Auto-remove highlight after 30 seconds
         setTimeout(() => {
           this.priorityTargets.delete(targetId);
           targetRow.style.backgroundColor = "";
@@ -5447,11 +5417,11 @@
             statusCell.style.fontWeight = "";
             statusCell.style.color = "";
           }
-        }, 10000);
+        }, 30000);
       }
 
-      // Priority targets will be sorted naturally on next refresh
-      // Avoiding displayTargets() call to prevent targets disappearing
+      // Re-sort table to bring priority targets to top
+      this.displayTargets();
     }
 
     startFullRefresh() {
@@ -5568,13 +5538,16 @@
             this.injectUI();
             
             // Try to load targets from DOM immediately after UI injection
+            console.log('🔍 [CAT] UI injected, attempting to fetch war data automatically');
             
             // Immediately try the Torn-like fetch to get fresh data
             setTimeout(() => {
               fetchWarDataLikeTorn().then(data => {
                 if (data && data.warDesc) {
+                  console.log('🔍 [CAT] Auto-fetch successful, loading targets');
                   this.loadTargets();
                 } else {
+                  console.log('🔍 [CAT] Auto-fetch failed, trying DOM fallback');
                   this.loadTargets();
                 }
               });
@@ -7042,7 +7015,7 @@
 
                         <div style="margin-top: 15px; padding: 10px; background: rgba(74, 144, 226, 0.1); border-left: 4px solid #4a90e2; border-radius: 0 5px 5px 0;">
                             <div style="font-size: 12px; color: #ccc; line-height: 1.4;">
-                                <strong>Version:</strong> <span id="current-version-display">5.1.4</span> • <strong>Author:</strong>
+                                <strong>Version:</strong> <span id="current-version-display">4.5.0</span> • <strong>Author:</strong>
                                 <a href="https://www.torn.com/profiles.php?XID=2353554" target="_blank" style="color: #4a90e2; text-decoration: none; font-weight: bold;" onmouseover="this.style.color='#6cb0ff'" onmouseout="this.style.color='#4a90e2'">JESUUS [2353554]</a>
                                 • <strong>Support:</strong> Private message
                             </div>
@@ -7309,6 +7282,8 @@
 
     updateWarUI(warDetails, errorMessage = null, fromCache = false) {
       if (errorMessage) {
+        console.error('❌ [CAT DEBUG] updateWarUI called with errorMessage:', errorMessage);
+        console.error('❌ [CAT DEBUG] updateWarUI error stack trace:', new Error().stack);
       }
       
       const statusElement = document.getElementById("war-status");
@@ -7343,37 +7318,7 @@
         // Handle different war details structures
         let warDescription = "Active War";
 
-        // Debug log to see what data is available
-
-        // First try to get faction names from war details participants
-        if (warDetails.participants && warDetails.enemy_participants) {
-          this.myFactionName = warDetails.participants.name;
-          this.enemyFactionName = warDetails.enemy_participants.name;
-          
-          
-          warDescription = `
-            <div style="text-align: center;">
-              <span style="color: #4a90e2; font-size: 13px;">${this.myFactionName}</span>
-              <span style="color: #ccc; font-size: 13px; margin: 0 4px;">vs</span>
-              <span style="color: #e74c3c; font-size: 13px;">${this.enemyFactionName}</span>
-            </div>
-          `;
-
-          // Update table titles
-          this.updateTableTitles();
-        } else if (window.warData && window.warData.currentFaction && window.warData.opponentFaction) {
-          this.myFactionName = window.warData.currentFaction.name;
-          this.enemyFactionName = window.warData.opponentFaction.name;
-          
-          
-          warDescription = `
-            <div style="text-align: center;">
-              <span style="color: #4a90e2; font-size: 13px;">${this.myFactionName}</span>
-              <span style="color: #ccc; font-size: 13px; margin: 0 4px;">vs</span>
-              <span style="color: #e74c3c; font-size: 13px;">${this.enemyFactionName}</span>
-            </div>
-          `;
-        } else if (warDetails.factions) {
+        if (warDetails.factions) {
           // TornStats format: { factions: { "id1": {name: "..."}, "id2": {name: "..."} } }
           const factionNames = Object.values(warDetails.factions).map(
             (f) => f.name
@@ -7941,14 +7886,6 @@
           clearInterval(this.targetRefreshTimer);
           this.targetRefreshTimer = null;
         }
-        if (this.targetStatusTimer) {
-          clearInterval(this.targetStatusTimer);
-          this.targetStatusTimer = null;
-        }
-        if (this.autoUncallTimer) {
-          clearInterval(this.autoUncallTimer);
-          this.autoUncallTimer = null;
-        }
         if (this.fullRefreshTimer) {
           clearInterval(this.fullRefreshTimer);
           this.fullRefreshTimer = null;
@@ -8037,10 +7974,7 @@
         const clearCacheBtn = document.getElementById("clear-cache");
 
         if (apiKeyBtn) {
-          apiKeyBtn.onclick = () => {
-            this.showApiKeyModal();
-          };
-        } else {
+          apiKeyBtn.onclick = () => this.showApiKeyModal();
         }
 
         // BSP mode toggle removed - always use TBS mode
@@ -9747,10 +9681,10 @@
       // Try to load from cache first
       const cachedData = this.loadCachedFactionData();
       if (cachedData) {
-        // We'll still make a fresh API call to get the best chain from stats
-        // this.displayFactionData(cachedData);
-        // this.loadScriptUsers();
-        // return;
+        this.displayFactionData(cachedData);
+        // Always load script users even when using cached faction data
+        this.loadScriptUsers();
+        return;
       }
 
       try {
@@ -9758,9 +9692,6 @@
 
         // First fetch basic faction data from Torn API
         let basicFactionData = {};
-        
-        // Also fetch faction statistics for best chain
-        let factionStats = {};
         let factionMembers = {};
 
         try {
@@ -9778,17 +9709,8 @@
           if (membersResponse.ok) {
             const membersData = await membersResponse.json();
             factionMembers = membersData.members || {};
-          }
 
-          // Get faction statistics for best chain
-          const statsUrl = `https://api.torn.com/v2/faction?selections=stats&key=${this.apiKey}`;
-          const statsResponse = await customFetch(statsUrl);
-
-          if (statsResponse.ok) {
-            factionStats = await statsResponse.json();
-          } else {
-            const errorText = await statsResponse.text();
-            console.error('📊 [FACTION STATS] API Error:', statsResponse.status, errorText);
+            // Basic selection includes members with limited info, let's check
           }
         } catch (tornError) {
           console.error("[War Calling] Torn API error:", tornError);
@@ -9814,10 +9736,9 @@
             ...basicFactionData,
             ...additionalFactionData,
             best_chain:
-              factionStats.chain?.best || 
               additionalFactionData.basic?.best_chain || 
               additionalFactionData.best_chain || 
-              basicFactionData.best_chain || 0,
+              basicFactionData.best_chain,
             rank: additionalFactionData.basic?.rank || 
               additionalFactionData.rank || 
               basicFactionData.rank,
@@ -9996,7 +9917,6 @@
       const statsElement = document.getElementById("faction-stats");
       const factionMembersElement = document.getElementById("faction-members");
 
-
       // Clear loading message
       if (factionStatusElement) {
         factionStatusElement.innerHTML = "";
@@ -10017,28 +9937,46 @@
         const capacity = factionData.capacity || 100;
 
 
-        // Find leaders by position from members data
-        if (factionMembers) {
-          let membersArray = [];
+        // TornStats provides leader/co-leader IDs, need to find their names
+        if (factionMembers && factionData.leader) {
+          leaderId = factionData.leader;
+          let leaderMember = null;
           
-          // Convert to array format if it's an object
           if (Array.isArray(factionMembers)) {
-            membersArray = factionMembers;
+            leaderMember = factionMembers.find(member => member.id == leaderId);
           } else {
-            membersArray = Object.values(factionMembers);
+            leaderMember = factionMembers[leaderId];
           }
           
-          // Find leader
-          const leader = membersArray.find(member => 
+          if (leaderMember) leaderName = leaderMember.name;
+        }
+
+        if (factionMembers && factionData["co-leader"]) {
+          coLeaderId = factionData["co-leader"];
+          let coLeaderMember = null;
+          
+          if (Array.isArray(factionMembers)) {
+            coLeaderMember = factionMembers.find(member => member.id == coLeaderId);
+          } else {
+            coLeaderMember = factionMembers[coLeaderId];
+          }
+          
+          if (coLeaderMember) coLeaderName = coLeaderMember.name;
+        }
+
+        // Alternative: try to find leaders by position if direct lookup fails
+        if (leaderName === "Unknown" && Array.isArray(factionMembers)) {
+          const leader = factionMembers.find(member => 
             member.position && member.position.toLowerCase() === "leader"
           );
           if (leader) {
             leaderName = leader.name;
             leaderId = leader.id;
           }
-          
-          // Find co-leader
-          const coLeader = membersArray.find(member => 
+        }
+
+        if (coLeaderName === "Unknown" && Array.isArray(factionMembers)) {
+          const coLeader = factionMembers.find(member => 
             member.position && member.position.toLowerCase() === "co-leader"
           );
           if (coLeader) {
@@ -10073,81 +10011,36 @@
         // Try to get stats from DOM if API data is missing
         if (bestChain === 0 || !factionData.rank) {
           try {
-            // Look specifically for warring rank elements first
-            const warRankElements = document.querySelectorAll('.faction-wars-rank, .warring-rank, [class*="rank"], [class*="war"]');
-            for (const element of warRankElements) {
+            // Try to extract best chain and rank from any element on the page
+            const allElements = document.querySelectorAll('*');
+            for (const element of allElements) {
               const text = element.textContent || '';
               
-              // Look for warring rank patterns (Gold, Silver, Bronze, etc.)
-              if (rankDisplay === "Unranked" && (text.includes('Gold') || text.includes('Silver') || text.includes('Bronze') || text.includes('Platinum') || text.includes('Diamond'))) {
-                const warRankMatch = text.match(/(Diamond|Platinum|Gold|Silver|Bronze|Metal)(?:\s+(I{1,3}|\d))?/i);
-                if (warRankMatch) {
-                  rankDisplay = warRankMatch[0].trim();
-                  
-                  // Create a rank object for the badge system
-                  factionData.rank = {
-                    name: warRankMatch[1].trim(),
-                    division: warRankMatch[2] ? warRankMatch[2].trim() : "",
-                    position: null
-                  };
-                  break;
+              // Look for best chain pattern
+              if (bestChain === 0 && text.includes('Best chain')) {
+                const chainMatch = text.match(/Best chain[:\s]*(\d+)/i);
+                if (chainMatch) {
+                  bestChain = parseInt(chainMatch[1]) || bestChain;
                 }
               }
-            }
-            
-            // Fallback: search all elements but with better filtering
-            if (rankDisplay === "Unranked") {
-              const allElements = document.querySelectorAll('*');
-              for (const element of allElements) {
-                const text = element.textContent || '';
-                
-                // Look for best chain pattern with multiple variations
-                if (bestChain === 0 && (text.includes('Best chain') || text.includes('best chain') || text.includes('Chain record'))) {
-                  const chainPatterns = [
-                    /Best chain[:\s]*(\d+)/i,
-                    /best chain[:\s]*(\d+)/i,
-                    /Chain record[:\s]*(\d+)/i,
-                    /Record[:\s]*(\d+)/i,
-                    /Highest chain[:\s]*(\d+)/i
-                  ];
-                  
-                  for (const pattern of chainPatterns) {
-                    const chainMatch = text.match(pattern);
-                    if (chainMatch) {
-                      bestChain = parseInt(chainMatch[1]) || bestChain;
-                      break;
-                    }
+              
+              // Look for rank information (avoid generic words)
+              if (rankDisplay === "Unranked" && text.includes('Rank')) {
+                const rankMatch = text.match(/Rank[:\s]*([^0-9\n\r]+)/i);
+                if (rankMatch && rankMatch[1] && rankMatch[1].trim().length > 3) {
+                  const potentialRank = rankMatch[1].trim();
+                  if (!potentialRank.toLowerCase().includes('unranked')) {
+                    rankDisplay = potentialRank;
                   }
                 }
-                
-                // Look for warring rank information only
-                if (rankDisplay === "Unranked" && text.includes('Rank')) {
-                  // Only look for actual warring ranks
-                  const warRankMatch = text.match(/Rank[:\s]*(Diamond|Platinum|Gold|Silver|Bronze|Metal)(?:\s+(I{1,3}|\d))?/i);
-                  if (warRankMatch) {
-                    rankDisplay = warRankMatch[1].trim();
-                    if (warRankMatch[2]) {
-                      rankDisplay += ' ' + warRankMatch[2].trim();
-                    }
-                    
-                    // Create a rank object for the badge system
-                    factionData.rank = {
-                      name: warRankMatch[1].trim(),
-                      division: warRankMatch[2] ? warRankMatch[2].trim() : "",
-                      position: null
-                    };
-                    break;
-                  }
-                }
-                
-                // Stop if we found both
-                if (bestChain > 0 && rankDisplay !== "Unranked") {
-                  break;
-                }
+              }
+              
+              // Stop if we found both
+              if (bestChain > 0 && rankDisplay !== "Unranked") {
+                break;
               }
             }
           } catch (domError) {
-            console.error('[Faction] Error extracting rank from DOM:', domError);
           }
         }
 
@@ -10528,33 +10421,17 @@
           // Check for hospitalization - look for "Hospital" state or "In hospital" in description
           const isHospitalized = data.profile.status?.state === "Hospital" ||
                                  data.profile.status?.description?.toLowerCase().includes("in hospital");
-          
-          // Check for "Okay" status - auto-uncall when target becomes available to attack again
-          const isOkay = data.profile.status?.state === "Okay" || 
-                         data.profile.status?.text === "Okay";
 
-          if (isHospitalized || isOkay || elapsedTime >= 30000 || !isTargetCalled) {
+          if (isHospitalized || elapsedTime >= 30000 || !isTargetCalled) {
             let reason = "unknown";
             if (isHospitalized) {
               reason = "target hospitalized";
-              // Auto-uncall the target if hospitalized (with 5 second delay)
+              // Auto-uncall the target if hospitalized
               const targetToUncall = {
                 user_id: this.currentAttackTarget,
                 name: currentTarget.name
               };
-              setTimeout(() => {
-                this.uncallTarget(targetToUncall, true); // true = auto uncall
-              }, 5000); // 5 second delay
-            } else if (isOkay) {
-              reason = "target okay - ready to attack";
-              // Auto-uncall the target if okay (attack successful) (with 5 second delay)
-              const targetToUncall = {
-                user_id: this.currentAttackTarget,
-                name: currentTarget.name
-              };
-              setTimeout(() => {
-                this.uncallTarget(targetToUncall, true); // true = auto uncall
-              }, 5000); // 5 second delay
+              this.uncallTarget(targetToUncall, true); // true = auto uncall
             }
             else if (elapsedTime >= 30000) reason = "30 second timeout reached";
             else if (!isTargetCalled) reason = "target not called";
@@ -10677,6 +10554,7 @@
           );
         }
       } catch (error) {
+        console.log('🔍 [CAT] Error fetching script users, using offline mode:', error);
         const countElement = document.getElementById("script-users-count");
         if (countElement) {
           countElement.innerHTML = "1";
@@ -11509,14 +11387,6 @@
           const isConnected = this.realtimeManager?.isConnected;
           realtimeIndicator.textContent = isConnected ? "🟢 LIVE" : "🔄 SYNC";
           realtimeIndicator.style.color = isConnected ? "#27ae60" : "#e67e22";
-        } else {
-          // Essayer avec l'ID compact-realtime-indicator
-          const compactIndicator = document.querySelector('#compact-realtime-indicator');
-          if (compactIndicator) {
-            const isConnected = this.realtimeManager?.isConnected;
-            compactIndicator.textContent = isConnected ? "🟢 LIVE" : "🔄 SYNC";
-            compactIndicator.style.color = isConnected ? "#27ae60" : "#e67e22";
-          }
         }
       } else {
         // No war - hide counts
@@ -11533,13 +11403,19 @@
 
     parseEnemyTargetsFromDOM() {
       const targets = [];
+      console.log('🔍 [CAT] Starting parseEnemyTargetsFromDOM');
 
       try {
         // Look for the members list container first
         const membersList = document.querySelector('ul.members-list.membersCont___USwcq');
+        console.log('🔍 [CAT] Members list container:', membersList);
         
         if (!membersList) {
           console.warn('[C.A.T] Members list container not found');
+          console.log('🔍 [CAT] Current URL:', window.location.href);
+          console.log('🔍 [CAT] Available ul elements:', document.querySelectorAll('ul').length);
+          console.log('🔍 [CAT] Elements with members-list class:', document.querySelectorAll('.members-list').length);
+          console.log('🔍 [CAT] Elements with membersCont class:', document.querySelectorAll('[class*="membersCont"]').length);
           
           // Try alternative selectors
           const altSelectors = [
@@ -11552,16 +11428,21 @@
           
           altSelectors.forEach(selector => {
             const found = document.querySelectorAll(selector);
+            console.log(`🔍 [CAT] Selector "${selector}" found ${found.length} elements`);
             if (found.length > 0) {
+              console.log(`🔍 [CAT] First element classes:`, found[0].className);
             }
           });
           
           return targets;
         }
 
+        console.log('🔍 [CAT] Members list found with classes:', membersList.className);
+        console.log('🔍 [CAT] Members list HTML preview:', membersList.outerHTML.substring(0, 500));
 
         // Look for enemy faction members in the specific container
         const enemyMembers = membersList.querySelectorAll('li.enemy.enemy___uiAJH');
+        console.log('🔍 [CAT] Enemy members found:', enemyMembers.length);
         
         if (enemyMembers.length === 0) {
           // Try alternative enemy selectors
@@ -11574,7 +11455,9 @@
           
           for (const selector of alternativeEnemySelectors) {
             const altEnemies = membersList.querySelectorAll(selector);
+            console.log(`🔍 [CAT] Trying alternative enemy selector '${selector}': found ${altEnemies.length} elements`);
             if (altEnemies.length > 0) {
+              console.log('🔍 [CAT] First alternative enemy element classes:', altEnemies[0].className);
               break;
             }
           }
@@ -11583,9 +11466,12 @@
 
         enemyMembers.forEach((memberElement, index) => {
           try {
+            console.log(`🔍 [CAT] Processing enemy member ${index + 1}:`, memberElement);
+            console.log(`🔍 [CAT] Member ${index + 1} classes:`, memberElement.className);
             
             // Extract user ID from profile link
             const profileLink = memberElement.querySelector('a[href*="/profiles.php?XID="]');
+            console.log(`🔍 [CAT] Profile link for member ${index + 1}:`, profileLink);
             
             if (!profileLink) {
               console.warn(`[C.A.T] No profile link found for member ${index + 1}`);
@@ -11598,6 +11484,7 @@
               
               for (const selector of altProfileLinks) {
                 const altLink = memberElement.querySelector(selector);
+                console.log(`🔍 [CAT] Trying alternative profile selector '${selector}':`, altLink);
                 if (altLink) break;
               }
               
@@ -11724,12 +11611,14 @@
             };
 
             targets.push(targetData);
+            console.log(`🔍 [CAT] Successfully parsed member ${index + 1}:`, targetData);
 
           } catch (error) {
             console.warn('[C.A.T] Error parsing member:', error);
           }
         });
 
+        console.log(`🔍 [CAT] Total targets parsed: ${targets.length}`);
 
       } catch (error) {
         console.error('❌ [CAT] Error parsing DOM:', error);
@@ -11741,6 +11630,7 @@
         });
       }
 
+      console.log('🔍 [CAT] Final targets array:', targets);
       return targets;
     }
 
@@ -11752,9 +11642,20 @@
         const warData = unsafeWindow.CATWarData || {};
         const userData = unsafeWindow.CATUserData || {};
 
+        console.log('🔍 [CAT DEBUG] getEnemyTargetsFromInterceptedData checking data:', {
+          hasWarData: !!warData,
+          warDataKeys: Object.keys(warData),
+          hasUserData: !!userData,
+          userDataCount: Object.keys(userData).length,
+          hasOpponentFaction: !!warData.opponentFaction,
+          hasCurrentFaction: !!warData.currentFaction,
+          opponentFactionName: warData.opponentFaction?.name,
+          currentFactionName: warData.currentFaction?.name
+        });
 
         // Check if we have intercepted war data
         if (!warData.opponentFaction || !warData.currentFaction) {
+          console.log('🔍 [CAT DEBUG] No intercepted war data, falling back to DOM parsing');
           return this.parseEnemyTargetsFromDOM();
         }
 
@@ -11797,12 +11698,15 @@
     }
 
     async loadTargets() {
+      console.log('🔍 [CAT] loadTargets called, currentWar:', !!this.currentWar);
       
       // Always try to load targets from DOM, even if currentWar is not set
       // This allows the script to work without API configuration
+      console.log('🔍 [CAT] Proceeding with target loading regardless of currentWar status');
 
       // Prevent concurrent loading
       if (this.isLoadingTargets) {
+        console.log('🔍 [CAT] loadTargets exiting - already loading');
         return;
       }
       this.isLoadingTargets = true;
@@ -11817,6 +11721,7 @@
 
         // Get enemy targets from intercepted data (falls back to DOM if needed)
         const domTargets = this.getEnemyTargetsFromInterceptedData();
+        console.log('🔍 [CAT] loadTargets got domTargets:', domTargets.length, 'targets');
 
         if (domTargets.length === 0) {
           if (targetsList) {
@@ -11833,10 +11738,11 @@
         }
 
         // Display the targets immediately without waiting for API calls
+        console.log('🔍 [CAT] About to call displayTargets with', domTargets.length, 'targets');
         this.displayTargets(domTargets);
 
         // Get active calls from Supabase in background to update UI (non-blocking)
-        if (this.apiKey && this.apiKey.trim() !== "" && serverSupportsRelayEndpoints) {
+        if (this.apiKey && this.apiKey.trim() !== "") {
           customFetch(`${CONFIG.ovh.url}/call-management`, {
             method: "POST",
             headers: {
@@ -11930,6 +11836,7 @@
     }
 
     displayTargets(targets) {
+      console.log('🔍 [CAT] displayTargets called with', targets ? targets.length : 0, 'targets');
 
       // Prevent multiple simultaneous calls
       if (this.isDisplayingTargets) {
@@ -11959,10 +11866,18 @@
         const currentTargetIds = Array.from(this.currentTargets.keys()).sort();
         const newTargetIds = targets.map(t => t.user_id.toString()).sort();
 
+        console.log('🔍 [CAT] displayTargets - checking if re-render needed:', {
+          currentCount: currentTargetIds.length,
+          newCount: newTargetIds.length,
+          isForceSort: this.isForceSort,
+          isForceRenderFilters: this.isForceRenderFilters,
+          hasExistingUI: hasExistingUI
+        });
 
         if (currentTargetIds.length === newTargetIds.length &&
             currentTargetIds.every((id, index) => id === newTargetIds[index])) {
           // Same targets, just update the existing display without full re-render
+          console.log('🔍 [CAT] displayTargets - skipping re-render, same targets');
           this.isDisplayingTargets = false;
           return;
         }
@@ -11971,8 +11886,12 @@
       // Reset force sort and filter flags
       this.isForceSort = false;
       this.isForceRenderFilters = false;
+      console.log('🔍 [CAT] displayTargets - targetsList element:', targetsList);
+      console.log('🔍 [CAT] displayTargets - targets array length:', targets ? targets.length : 0);
+      console.log('🔍 [CAT] displayTargets - starting process...');
 
       if (!targets || targets.length === 0) {
+        console.log('🔍 [CAT] displayTargets - no targets, exiting');
         if (targetsList) {
           targetsList.innerHTML =
             '<p style="color: #888;">No available targets</p>';
@@ -11983,10 +11902,13 @@
       }
 
       // Apply filters first
+      console.log('🔍 [CAT] displayTargets - applying filters...');
       this._debuggedFirstMember = false; // Reset debug flag
       const filteredTargets = targets.filter(target => this.passesFilters(target));
+      console.log('🔍 [CAT] displayTargets - filtered targets:', filteredTargets.length);
 
       // Update currentTargets map for smart updates
+      console.log('🔍 [CAT] displayTargets - creating targets map...');
       const newTargetsMap = new Map();
       filteredTargets.forEach((target) => {
         // Ensure user_id is string for consistency
@@ -12058,6 +11980,8 @@
       // Check if table exists and has content
       const targetsTableBody = document.getElementById("targets-tbody");
       const isFirstLoad = !targetsTableBody || targetsTableBody.children.length === 0;
+      console.log('🔍 [CAT] displayTargets - targetsTableBody exists:', !!targetsTableBody);
+      console.log('🔍 [CAT] displayTargets - targetsTableBody children:', targetsTableBody ? targetsTableBody.children.length : 'N/A');
 
       // Always sync calls before first display if we have the prerequisites
       if (isFirstLoad && this.factionId && this.currentWar) {
@@ -12075,10 +11999,13 @@
         // });
       }
 
+      console.log('🔍 [CAT] displayTargets - isFirstLoad:', isFirstLoad);
       
       if (isFirstLoad) {
+        console.log('🔍 [CAT] displayTargets - first load path, creating table...');
         // Convert newTargetsMap back to array for table creation
         let allTargets = Array.from(newTargetsMap.values());
+        console.log('🔍 [CAT] displayTargets - allTargets created:', allTargets.length);
 
         // Apply saved sorting
         allTargets = this.sortTargets(
@@ -12119,8 +12046,11 @@
                     </table>
                 `;
         
+        console.log('🔍 [CAT] displayTargets - HTML table created and set in innerHTML, checking DOM...');
         
         const newTbody = document.getElementById("targets-tbody");
+        console.log('🔍 [CAT] displayTargets - new tbody found:', !!newTbody);
+        console.log('🔍 [CAT] displayTargets - new tbody children:', newTbody ? newTbody.children.length : 'N/A');
 
         // Add event listeners for call buttons
         targetsList.querySelectorAll(".call-btn").forEach((btn) => {
@@ -12276,9 +12206,6 @@
 
       // Update compact info bar
       this.updateCompactInfo();
-      
-      // Immediately reapply all call UI states after table reconstruction to prevent flicker
-      this.reapplyAllCallStates();
 
       } catch (error) {
         console.error('Error in displayTargets:', error);
@@ -13574,16 +13501,12 @@ DEX: ${formatNumber(bspData.Dex || 0)}`;
     }
 
     updateCallUI(targetId, isCalled, metadata = null, isPending = false) {
-      // Skip UI update if request is pending (unless explicitly setting pending state)
-      if (!isPending && this.pendingRequests.has(targetId)) {
+      // Allow pending state updates even if there's a pending request
+      if (!isPending && this.pendingCallRequests.has(targetId)) {
+        // Don't update UI while a call/uncall request is pending
         return;
       }
-      
-      // Skip UI updates during table reconstruction to avoid flicker
-      if (this.isTableRebuilding) {
-        return;
-      }
-      
+
       // Try to get cached elements first
       let cachedElements = this.targetRowCache.get(targetId);
 
@@ -13653,24 +13576,6 @@ DEX: ${formatNumber(bspData.Dex || 0)}`;
         targetRow.style.backgroundColor = "";
       }
     }
-    
-    // Reapply all call states immediately after table reconstruction
-    reapplyAllCallStates() {
-      // Clear cache since DOM was rebuilt
-      this.targetRowCache.clear();
-      
-      // Reapply all active calls without any delays
-      this.activeCalls.forEach((callData, targetId) => {
-        this.updateCallUI(targetId, true, callData);
-      });
-      
-      // Set uncalled state for remaining targets
-      this.currentTargets.forEach((target, targetId) => {
-        if (!this.activeCalls.has(targetId)) {
-          this.updateCallUI(targetId, false);
-        }
-      });
-    }
 
     // Method for realtime updates - wrapper around updateCallUI
     updateTargetCallStatus(targetId, isCalled, callerName = null) {
@@ -13696,8 +13601,8 @@ DEX: ${formatNumber(bspData.Dex || 0)}`;
       // }
 
       // Check for pending request
-      if (this.pendingRequests.has(targetId)) {
-        return;
+      if (this.pendingCallRequests.has(targetId)) {
+        return this.pendingCallRequests.get(targetId);
       }
 
       // Check for rapid successive calls (debounce)
@@ -13708,13 +13613,16 @@ DEX: ${formatNumber(bspData.Dex || 0)}`;
 
       this.lastCallTime.set(targetId, Date.now());
 
-      // Set pending state
-      this.pendingRequests.add(targetId);
+      // Show PENDING state immediately
       this.updateCallUI(targetId, true, { caller_name: this.userName }, true);
 
+      const uncallPromise = this._performUncall(target, isAutoUncall);
+      this.pendingCallRequests.set(targetId, uncallPromise);
+
       try {
-        const result = await this._performUncall(target, isAutoUncall);
-        
+        const result = await uncallPromise;
+        this.pendingCallRequests.delete(targetId);
+
         // Update UI based on result
         if (result && result.success) {
           this.updateCallUI(targetId, false);
@@ -13725,7 +13633,7 @@ DEX: ${formatNumber(bspData.Dex || 0)}`;
 
         return result;
       } finally {
-        this.pendingRequests.delete(targetId);
+        this.pendingCallRequests.delete(targetId);
       }
     }
 
@@ -13737,11 +13645,6 @@ DEX: ${formatNumber(bspData.Dex || 0)}`;
 
         if (!originalCallData) {
           // No call to uncall - return success to trigger UI update in finally block
-          return { success: true };
-        }
-
-        // Return success if server doesn't support relay endpoints
-        if (!serverSupportsRelayEndpoints) {
           return { success: true };
         }
 
@@ -13783,9 +13686,6 @@ DEX: ${formatNumber(bspData.Dex || 0)}`;
           // Update data on successful uncall
           this.activeCalls.delete(targetId);
           this.updateCompactInfo();
-          
-          // Clear pending state immediately after success
-          this.pendingRequests.delete(targetId);
         }
 
         return result;
@@ -13815,8 +13715,8 @@ DEX: ${formatNumber(bspData.Dex || 0)}`;
       const targetId = target.user_id.toString();
 
       // Check for pending request
-      if (this.pendingRequests.has(targetId)) {
-        return;
+      if (this.pendingCallRequests.has(targetId)) {
+        return this.pendingCallRequests.get(targetId);
       }
 
       // Check for rapid successive calls (debounce)
@@ -13827,56 +13727,77 @@ DEX: ${formatNumber(bspData.Dex || 0)}`;
 
       this.lastCallTime.set(targetId, Date.now());
 
-      // Set pending state
-      this.pendingRequests.add(targetId);
+      // Limit concurrent calls to reduce server load
+      const maxConcurrentCalls = 2; // Maximum 2 simultaneous calls
+      if (this.pendingCallRequests.size >= maxConcurrentCalls) {
+        // Wait for at least one call to complete before proceeding
+        await Promise.race(Array.from(this.pendingCallRequests.values()));
+      }
+
+      const performCallStartTime = performance.now();
+
+      // Show PENDING state immediately
       this.updateCallUI(targetId, false, null, true);
 
+      const callPromise = this._performCall(target);
+      this.pendingCallRequests.set(targetId, callPromise);
+
       try {
-        const result = await this._performCall(target);
-        
-        // UI update is handled in _performCall, don't duplicate here
+        const result = await callPromise;
+        this.pendingCallRequests.delete(targetId);
+
+        // Update UI based on result
+        if (result && result.success) {
+          this.updateCallUI(targetId, true, {
+            caller_name: this.userName || "Unknown",
+            target_name: target.name,
+            target_level: target.level || 0,
+            target_status: target.status
+          });
+        } else {
+          // Restore Call button if failed
+          this.updateCallUI(targetId, false);
+        }
+
         return result;
       } finally {
-        this.pendingRequests.delete(targetId);
+        this.pendingCallRequests.delete(targetId);
       }
     }
 
     async _performCall(target) {
       try {
-        // Simplified - no need for additional tracking as pendingRequests handles it
+        // Prevent multiple simultaneous calls on the same target
+        if (this.pendingCalls && this.pendingCalls.has(target.user_id)) {
+          return;
+        }
+
+        // Track pending calls
+        if (!this.pendingCalls) this.pendingCalls = new Set();
+        this.pendingCalls.add(target.user_id);
+
+        const startTime = performance.now();
+
+        // Don't update UI immediately - wait for server response
+        const uiStartTime = performance.now();
+        const uiEndTime = performance.now();
 
         // Add timeout to prevent hanging requests
         const timeoutPromise = new Promise((_, reject) =>
           setTimeout(() => reject(new Error("Call request timeout")), 15000)
         );
 
-        const requestData = {
-          operation: "manage-calls",
-          data: {
-            action: "call",
-            war_id: this.currentWar.war_id,
-            faction_id: this.factionId,
-            target_id: target.user_id,
-            target_name: target.name,
-            target_level: target.level,
-            target_faction_id: target.faction_id,
-            target_status: target.status ? JSON.stringify(target.status) : null,
-            caller_id: this.userId,
-            caller_name: this.userName || "Unknown",
-          }
-        };
-        
+        const url = `${CONFIG.ovh.url}/call-management`;
 
-        // Return success if server doesn't support relay endpoints
-        if (!serverSupportsRelayEndpoints) {
-          return { success: true };
-        }
-        
+        const apiStartTime = performance.now();
+
         const response = await Promise.race([
-          customFetch(`${CONFIG.ovh.url}/call-management`, {
+          customFetch(url, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
+              apikey: CONFIG.supabase.anonKey,
+              Authorization: `Bearer ${CONFIG.supabase.anonKey}`,
             },
             body: JSON.stringify({
               action: "call",
@@ -13894,49 +13815,34 @@ DEX: ${formatNumber(bspData.Dex || 0)}`;
           timeoutPromise,
         ]);
 
-        
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error("❌ [CAT] HTTP Error:", response.status, errorText);
-          throw new Error(`HTTP ${response.status}: ${errorText}`);
-        }
+        const apiEndTime = performance.now();
 
         let result;
         try {
+          const parseStartTime = performance.now();
           result = await response.json();
+          const parseEndTime = performance.now();
         } catch (parseError) {
-          console.error("❌ [CAT] Failed to parse response:", parseError);
-          const responseText = await response.text();
-          console.error("❌ [CAT] Response text:", responseText);
+          console.error("Failed to parse response:", parseError);
           throw new Error("Invalid response from server");
         }
 
-        
         if (!result.success) {
           // Call failed
-          console.error("❌ [CAT] Call failed:", result.error);
           alert(result.error || "Failed to call target");
         } else {
           // Call succeeded - update data
-          const callMetadata = {
+          this.activeCalls.set(target.user_id, {
             caller_name: this.userName || "Unknown",
             target_name: target.name,
             target_level: target.level || 0,
             target_status: target.status,
-          };
-          
-          this.activeCalls.set(target.user_id, callMetadata);
-          
-          // Update UI to show UNCALL button
-          this.updateCallUI(target.user_id, true, callMetadata);
-          
+          });
           // Update compact info on successful call
           this.updateCompactInfo();
-          
-          // Clear pending state immediately after success
-          this.pendingRequests.delete(target.user_id);
         }
 
+        const totalTime = performance.now() - startTime;
 
         return result;
       } catch (error) {
@@ -13953,6 +13859,11 @@ DEX: ${formatNumber(bspData.Dex || 0)}`;
         }
 
         return { success: false, error: error.message };
+      } finally {
+        // Always clean up pending calls
+        if (this.pendingCalls) {
+          this.pendingCalls.delete(target.user_id);
+        }
       }
     }
 
@@ -13992,7 +13903,7 @@ DEX: ${formatNumber(bspData.Dex || 0)}`;
 
         // Get fresh target data with current status
         const response = await this.customFetch(
-          `http://cat-script.duckdns.org:8080/get-targets`,
+          `${this.CONFIG.supabase.url}/functions/v1/get-war-targets`,
           {
             method: 'POST',
             headers: {
@@ -14000,10 +13911,10 @@ DEX: ${formatNumber(bspData.Dex || 0)}`;
               'Authorization': `Bearer ${this.CONFIG.supabase.anonKey}`,
             },
             body: JSON.stringify({
-                war_id: activeWar.war_id,
-                faction_id: this.factionId,
-                api_key: this.apiKey,
-                called_targets_only: [targetId]
+              war_id: activeWar.war_id,
+              faction_id: this.factionId,
+              api_key: this.apiKey,
+              called_targets_only: [targetId]
             }),
           }
         );
@@ -14370,28 +14281,6 @@ DEX: ${formatNumber(bspData.Dex || 0)}`;
 
       // Defer connection tests to avoid blocking UI
       setTimeout(() => {
-        // Test relay server first and set serverSupportsRelayEndpoints
-        GM_xmlhttpRequest({
-          method: 'GET',
-          url: 'http://51.178.26.139:8444/ping',
-          timeout: 5000,
-          onload: (response) => {
-            if (response.status === 200) {
-              try {
-                const data = JSON.parse(response.responseText);
-                if (data.deployed || data.status) {
-                  serverSupportsRelayEndpoints = true;
-                }
-              } catch (e) {
-                console.warn('⚠️ [CAT Relay] Direct IP server does not support relay endpoints');
-              }
-            }
-          },
-          onerror: () => {
-            console.warn('⚠️ [CAT Relay] Direct IP server not accessible');
-          }
-        });
-        
         Promise.all([
           window.testSupabaseConnection().catch(console.error),
           TestBSPConnection().catch(console.error),
@@ -14407,28 +14296,6 @@ DEX: ${formatNumber(bspData.Dex || 0)}`;
 
     // Defer connection tests
     setTimeout(() => {
-      // Test relay server first and set serverSupportsRelayEndpoints
-      GM_xmlhttpRequest({
-        method: 'GET',
-        url: 'http://51.178.26.139:8444/ping',
-        timeout: 5000,
-        onload: (response) => {
-          if (response.status === 200) {
-            try {
-              const data = JSON.parse(response.responseText);
-              if (data.deployed || data.status) {
-                serverSupportsRelayEndpoints = true;
-              }
-            } catch (e) {
-              console.warn('⚠️ [CAT Relay] Direct IP server does not support relay endpoints');
-            }
-          }
-        },
-        onerror: () => {
-          console.warn('⚠️ [CAT Relay] Direct IP server not accessible');
-        }
-      });
-      
       Promise.all([
         window.testSupabaseConnection().catch(console.error),
         TestBSPConnection().catch(console.error),

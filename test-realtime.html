@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CAT Realtime Connection Test</title>
+</head>
+<body>
+    <h1>CAT Realtime Connection Test</h1>
+    <div id="status">Initializing...</div>
+    <div id="logs"></div>
+
+    <script>
+        // Mock GM_xmlhttpRequest for testing
+        function GM_xmlhttpRequest(options) {
+            const xhr = new XMLHttpRequest();
+            xhr.open(options.method || 'GET', options.url);
+            
+            if (options.headers) {
+                for (const [key, value] of Object.entries(options.headers)) {
+                    xhr.setRequestHeader(key, value);
+                }
+            }
+            
+            xhr.onreadystatechange = function() {
+                if (options.onreadystatechange) {
+                    options.onreadystatechange({
+                        readyState: xhr.readyState,
+                        status: xhr.status,
+                        responseText: xhr.responseText
+                    });
+                }
+            };
+            
+            xhr.onload = function() {
+                if (options.onload) {
+                    options.onload({
+                        status: xhr.status,
+                        responseText: xhr.responseText
+                    });
+                }
+            };
+            
+            xhr.onerror = function() {
+                if (options.onerror) {
+                    options.onerror(new Error('XHR Error'));
+                }
+            };
+            
+            if (options.timeout && options.timeout > 0) {
+                xhr.timeout = options.timeout;
+            }
+            
+            xhr.send(options.data);
+            
+            return {
+                abort: () => xhr.abort()
+            };
+        }
+
+        // Test CATRelayClient
+        let serverSupportsRelayEndpoints = false;
+
+        class CATRelayClient {
+            constructor(relayUrl, factionId, apiKey) {
+                this.relayUrl = relayUrl;
+                this.factionId = factionId;
+                this.apiKey = apiKey;
+                this.lastEventTimestamp = Date.now();
+                this.isSubscribed = false;
+                this.pollInterval = null;
+                this.streamRequest = null;
+                this.onmessage = null;
+                this.onopen = null;
+                this.onclose = null;
+                this.onerror = null;
+                this.readyState = 0; // CONNECTING
+            }
+
+            async connect() {
+                try {
+                    document.getElementById('status').innerHTML = 'Testing connection...';
+                    
+                    await this.testConnection();
+                    this.readyState = 1; // OPEN
+                    
+                    document.getElementById('status').innerHTML = 'Connected! Starting realtime stream...';
+                    this.startPolling();
+                    
+                    if (this.onopen) {
+                        this.onopen();
+                    }
+                } catch (error) {
+                    console.error("❌ [CAT Relay] Connection failed:", error);
+                    document.getElementById('status').innerHTML = 'Connection failed: ' + error.message;
+                    this.readyState = 3; // CLOSED
+                    if (this.onerror) {
+                        this.onerror(error);
+                    }
+                }
+            }
+
+            async testConnection() {
+                return new Promise((resolve, reject) => {
+                    GM_xmlhttpRequest({
+                        method: 'POST',
+                        url: `${this.relayUrl}/call-management`,
+                        headers: { 'Content-Type': 'application/json' },
+                        data: JSON.stringify({ action: 'get_calls', war_id: 'test', faction_id: 'test' }),
+                        timeout: 5000,
+                        onload: (response) => {
+                            if (response.status === 200) {
+                                try {
+                                    const data = JSON.parse(response.responseText);
+                                    if (data.success !== undefined || data.error) {
+                                        console.log('✅ [CAT Relay] Real relay server detected');
+                                        serverSupportsRelayEndpoints = true;
+                                        resolve(true);
+                                    } else {
+                                        reject(new Error('Server call-management response invalid'));
+                                    }
+                                } catch (e) {
+                                    reject(new Error('Server is not a CAT Relay server'));
+                                }
+                            } else {
+                                reject(new Error(`Server responded with status ${response.status}`));
+                            }
+                        },
+                        onerror: (error) => {
+                            reject(new Error('Connection test failed'));
+                        }
+                    });
+                });
+            }
+
+            startPolling() {
+                this.connectToRealtimeStream();
+            }
+
+            connectToRealtimeStream() {
+                console.log('📡 [CAT Relay] Connecting to realtime stream:', `${this.relayUrl}/realtime_stream`);
+                const logs = document.getElementById('logs');
+                logs.innerHTML += '<div>Connecting to realtime stream...</div>';
+                
+                this.streamRequest = GM_xmlhttpRequest({
+                    method: 'GET',
+                    url: `${this.relayUrl}/realtime_stream`,
+                    headers: {
+                        'Accept': 'text/event-stream',
+                        'Cache-Control': 'no-cache'
+                    },
+                    timeout: 0,
+                    onreadystatechange: (response) => {
+                        if (response.readyState === 3 || response.readyState === 4) {
+                            this.processStreamData(response.responseText);
+                        }
+                    },
+                    onload: (response) => {
+                        console.log('📡 [CAT Relay] Realtime stream connection completed');
+                        logs.innerHTML += '<div>Realtime stream connection completed</div>';
+                    },
+                    onerror: (error) => {
+                        console.error('❌ [CAT Relay] Realtime stream error:', error);
+                        logs.innerHTML += '<div>Realtime stream error: ' + error + '</div>';
+                        setTimeout(() => {
+                            this.connectToRealtimeStream();
+                        }, 5000);
+                    }
+                });
+            }
+
+            processStreamData(rawData) {
+                if (!rawData) return;
+                
+                const lines = rawData.split('\n');
+                let lastDataLine = '';
+                
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        lastDataLine = line.substring(6);
+                        try {
+                            const eventData = JSON.parse(lastDataLine);
+                            
+                            if (eventData.type === 'connected') {
+                                console.log('✅ [CAT Relay] Realtime stream connected:', eventData.message);
+                                const logs = document.getElementById('logs');
+                                logs.innerHTML += '<div style="color: green;">✅ Realtime stream connected: ' + eventData.message + '</div>';
+                                document.getElementById('status').innerHTML = '🟢 LIVE - Realtime connection established!';
+                            } else if (eventData.type === 'heartbeat') {
+                                console.log('💓 [CAT Relay] Heartbeat received');
+                                const logs = document.getElementById('logs');
+                                logs.innerHTML += '<div style="color: blue;">💓 Heartbeat received at ' + new Date().toLocaleTimeString() + '</div>';
+                            } else if (this.onmessage) {
+                                const wsMessage = {
+                                    data: JSON.stringify({
+                                        event: 'postgres_changes',
+                                        payload: eventData
+                                    })
+                                };
+                                this.onmessage(wsMessage);
+                            }
+                        } catch (e) {
+                            // Ignore JSON parse errors for partial data
+                        }
+                    }
+                }
+            }
+
+            close() {
+                if (this.pollInterval) {
+                    clearInterval(this.pollInterval);
+                    this.pollInterval = null;
+                }
+
+                if (this.streamRequest) {
+                    this.streamRequest.abort();
+                    this.streamRequest = null;
+                }
+
+                this.isSubscribed = false;
+                this.readyState = 3; // CLOSED
+
+                if (this.onclose) {
+                    this.onclose();
+                }
+            }
+        }
+
+        // Test the connection
+        window.onload = function() {
+            const client = new CATRelayClient('http://51.178.26.139:8443', 'test123', 'test_api_key');
+            
+            client.onopen = function() {
+                console.log('Client opened');
+            };
+            
+            client.onmessage = function(message) {
+                console.log('Message received:', message);
+                const logs = document.getElementById('logs');
+                logs.innerHTML += '<div>Message: ' + JSON.stringify(message) + '</div>';
+            };
+            
+            client.connect();
+        };
+    </script>
+</body>
+</html>
